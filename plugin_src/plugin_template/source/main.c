@@ -1,36 +1,29 @@
-#include <stdio.h>
-#include <stddef.h>
-#include <stdint.h>
-
-#include "plugin_common.h"
-
-attr_public const char *g_pluginName = "plugin_template";
-attr_public const char *g_pluginDesc = "Example Plugin";
-attr_public const char *g_pluginAuth = "(null)";
-attr_public uint32_t g_pluginVersion = 0x00000100; // 1.00
-
-int32_t attr_public plugin_load(int32_t argc, const char* argv[]) {
-    final_printf("[GoldHEN] %s Plugin Started.\n", g_pluginName);
-    final_printf("[GoldHEN] <%s\\Ver.0x%08x> %s\n", g_pluginName, g_pluginVersion, __func__);
-    final_printf("[GoldHEN] Plugin Author(s): %s\n", g_pluginAuth);
-    char msg[128] = {0};
-    snprintf(msg, sizeof(msg),  "Hello from %s", g_pluginName);
-    NotifyStatic(TEX_ICON_SYSTEM, msg);
-    return 0;
-}
-
-int32_t attr_public plugin_unload(int32_t argc, const char* argv[]) {
-    final_printf("[GoldHEN] <%s\\Ver.0x%08x> %s\n", g_pluginName, g_pluginVersion, __func__);
-    final_printf("[GoldHEN] %s Plugin Ended.\n", g_pluginName);
-    return 0;
-}
-
-s32 attr_module_hidden module_start(s64 argc, const void *args)
-{
-    return 0;
-}
-
-s32 attr_module_hidden module_stop(s64 argc, const void *args)
-{
-    return 0;
+static void load_config(void) {
+    char buf[16] = {0};
+    s32 fd = sceKernelOpen(CONFIG_PATH, 0 /* O_RDONLY */, 0);
+    if (fd < 0) return; // файлу немає, лишається дефолт
+    s32 n = sceKernelRead(fd, buf, sizeof(buf) - 1);
+    sceKernelClose(fd);
+    if (n <= 0) return;
+    for (s32 i = 0; i < n; i++) {
+        if (buf[i] == '\r' || buf[i] == '\n' || buf[i] == ' ') { buf[i] = 0; break; }
+    }
+    // 1) шукаємо за кодом мови (ru, en, de ...)
+    for (u32 i = 0; i < LANG_COUNT; i++) {
+        if (strcmp(buf, LANGS[i].code) == 0) {
+            g_targetLang = LANGS[i].id;
+            strncpy(g_langCode, buf, sizeof(g_langCode) - 1);
+            return;
+        }
+    }
+    // 2) якщо там число, беремо його як ID напряму
+    s32 num = 0, ok = 0;
+    for (s32 i = 0; buf[i]; i++) {
+        if (buf[i] >= '0' && buf[i] <= '9') { num = num * 10 + (buf[i] - '0'); ok = 1; }
+        else { ok = 0; break; }
+    }
+    if (ok) {
+        g_targetLang = num;
+        strncpy(g_langCode, buf, sizeof(g_langCode) - 1);
+    }
 }
