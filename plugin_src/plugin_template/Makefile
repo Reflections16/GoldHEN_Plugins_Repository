@@ -94,3 +94,4 @@ all: build-info $(TARGET)
 
 clean:
 	rm -rf $(TARGET) $(TARGETSTUB) $(INTDIR) $(OBJS)
+1
