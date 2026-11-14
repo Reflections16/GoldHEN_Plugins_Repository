@@ -1,5 +1,3 @@
-// trophy_restore: unlocks trophies from /data/trophy_unlock.txt while
-// faking the time seen by the game process. EXPERIMENTAL.
 
 #include <stdio.h>
 #include <stdarg.h>
