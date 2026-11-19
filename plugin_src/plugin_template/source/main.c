@@ -102,49 +102,9 @@ static s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u3
 static s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h);
 static s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt);
 static s32 sceNpTrophyInit_hook(const char *commId, const char *svcLabel);
+static void process_list(void);  // <--- FORWARD DECLARATION
 
-// ===== RESOLVE SYMBOLS =====
-static void resolve_symbols(void) {
-    if (g_symbols_resolved) return;
-    g_symbols_resolved = 1;
-    LOG("resolve_symbols: START");
-
-    void *np_mod = dlopen("libSceNpTrophy.sprx", RTLD_NOW);
-    void *rtc_mod = dlopen("libSceRtc.sprx", RTLD_NOW);
-    void *kernel_mod = dlopen("libSceKernel.sprx", RTLD_NOW);
-
-    if (np_mod) {
-        real_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit"); LOG("sceNpTrophyInit=%p", real_sceNpTrophyInit);
-        real_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext"); LOG("CreateContext=%p", real_sceNpTrophyCreateContext);
-        real_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle"); LOG("CreateHandle=%p", real_sceNpTrophyCreateHandle);
-        real_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext"); LOG("RegisterContext=%p", real_sceNpTrophyRegisterContext);
-        real_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy"); LOG("UnlockTrophy=%p", real_sceNpTrophyUnlockTrophy);
-        real_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString"); LOG("GetErrorString=%p", real_sceNpTrophyGetErrorString);
-    }
-    if (rtc_mod) {
-        real_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick"); LOG("RtcGetCurrentTick=%p", real_sceRtcGetCurrentTick);
-        real_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick"); LOG("RtcSetCurrentTick=%p", real_sceRtcSetCurrentTick);
-    }
-    if (kernel_mod) {
-        real_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId"); LOG("GetProcessTitleId=%p", real_sceKernelGetProcessTitleId);
-    }
-    LOG("resolve_symbols: DONE");
-    notify("symbols resolved");
-}
-
-// ===== INSTALL HOOKS =====
-static void install_hooks(void) {
-    if (g_hooks_installed) return;
-    g_hooks_installed = 1;
-    notify("installing hooks...");
-    HOOK32(sceNpTrophyCreateContext); LOG("HOOK CreateContext");
-    HOOK32(sceNpTrophyCreateHandle); LOG("HOOK CreateHandle");
-    HOOK32(sceNpTrophyRegisterContext); LOG("HOOK RegisterContext");
-    HOOK32(sceNpTrophyInit); LOG("HOOK Init");
-    notify("hooks installed");
-}
-
-// ===== FORCE PROCESS LIST =====
+// ===== TRY PROCESS LIST =====
 static void try_process_list(void) {
     if (g_done || !g_current_npwr[0]) return;
     if (g_ctx < 0 || g_handle < 0) { LOG("try_process_list: ctx/handle not ready"); return; }
@@ -205,6 +165,47 @@ static void process_list(void) {
     LOG("process_list: DONE, processed=%d", processed);
 }
 
+// ===== RESOLVE SYMBOLS =====
+static void resolve_symbols(void) {
+    if (g_symbols_resolved) return;
+    g_symbols_resolved = 1;
+    LOG("resolve_symbols: START");
+
+    void *np_mod = dlopen("libSceNpTrophy.sprx", RTLD_NOW);
+    void *rtc_mod = dlopen("libSceRtc.sprx", RTLD_NOW);
+    void *kernel_mod = dlopen("libSceKernel.sprx", RTLD_NOW);
+
+    if (np_mod) {
+        real_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit"); LOG("sceNpTrophyInit=%p", real_sceNpTrophyInit);
+        real_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext"); LOG("CreateContext=%p", real_sceNpTrophyCreateContext);
+        real_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle"); LOG("CreateHandle=%p", real_sceNpTrophyCreateHandle);
+        real_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext"); LOG("RegisterContext=%p", real_sceNpTrophyRegisterContext);
+        real_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy"); LOG("UnlockTrophy=%p", real_sceNpTrophyUnlockTrophy);
+        real_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString"); LOG("GetErrorString=%p", real_sceNpTrophyGetErrorString);
+    }
+    if (rtc_mod) {
+        real_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick"); LOG("RtcGetCurrentTick=%p", real_sceRtcGetCurrentTick);
+        real_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick"); LOG("RtcSetCurrentTick=%p", real_sceRtcSetCurrentTick);
+    }
+    if (kernel_mod) {
+        real_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId"); LOG("GetProcessTitleId=%p", real_sceKernelGetProcessTitleId);
+    }
+    LOG("resolve_symbols: DONE");
+    notify("symbols resolved");
+}
+
+// ===== INSTALL HOOKS =====
+static void install_hooks(void) {
+    if (g_hooks_installed) return;
+    g_hooks_installed = 1;
+    notify("installing hooks...");
+    HOOK32(sceNpTrophyCreateContext); LOG("HOOK CreateContext");
+    HOOK32(sceNpTrophyCreateHandle); LOG("HOOK CreateHandle");
+    HOOK32(sceNpTrophyRegisterContext); LOG("HOOK RegisterContext");
+    HOOK32(sceNpTrophyInit); LOG("HOOK Init");
+    notify("hooks installed");
+}
+
 // ===== HOOKS =====
 s32 sceNpTrophyInit_hook(const char *commId, const char *svcLabel) {
     LOG("sceNpTrophyInit_hook: commId=%s svcLabel=%s", commId ? commId : "NULL", svcLabel ? svcLabel : "NULL");
@@ -212,7 +213,6 @@ s32 sceNpTrophyInit_hook(const char *commId, const char *svcLabel) {
     LOG("  -> ret=%d", r);
     if (r >= 0 && !g_init_done) {
         g_init_done = 1;
-        // Force process_list if we have context
         try_process_list();
     }
     return r;
