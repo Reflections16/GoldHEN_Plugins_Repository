@@ -44,7 +44,6 @@ HOOK_INIT(sceNpTrophyCreateContext);
 HOOK_INIT(sceNpTrophyCreateHandle);
 HOOK_INIT(sceNpTrophyRegisterContext);
 HOOK_INIT(sceNpTrophyGetTrophyList);
-HOOK_INIT(sceNpTrophyUnlockTrophy);
 
 // ===== МАПІНГ CUSA → NPWR (всі 11 ігор) =====
 typedef struct { const char *cusa; const char *npwr; } GameMap;
@@ -118,10 +117,10 @@ static void process_list(void) {
             continue;
         }
 
-        s64 unix = parse_time(time_str);
-        if (!unix) { logf_("BAD time: %s\n", time_str); continue; }
+        s64 unix_time = parse_time(time_str);
+        if (!unix_time) { logf_("BAD time: %s\n", time_str); continue; }
 
-        RtcTick tick = { .tick = ((u64)unix + 62135596800ULL) * 1000000ULL };
+        RtcTick tick = { .tick = ((u64)unix_time + 62135596800ULL) * 1000000ULL };
         sceRtcSetCurrentTick(&tick);
 
         SceNpTrophyId plat = 0;
@@ -132,7 +131,7 @@ static void process_list(void) {
             sceNpTrophyGetErrorString(r, err, sizeof(err));
             logf_("FAIL id=0x%llx ret=0x%x err=%s\n", (unsigned long long)id, r, err);
         } else {
-            logf_("OK   id=0x%llx time=%lld\n", (unsigned long long)id, (long long)unix);
+            logf_("OK   id=0x%llx time=%lld\n", (unsigned long long)id, (long long)unix_time);
         }
     }
     fclose(f);
@@ -210,7 +209,6 @@ s32 attr_public plugin_load(s32 argc, const char *argv[]) {
     HOOK32(sceNpTrophyCreateHandle);
     HOOK32(sceNpTrophyRegisterContext);
     HOOK32(sceNpTrophyGetTrophyList);
-    HOOK32(sceNpTrophyUnlockTrophy);
     logf_("trophy_restore v1.02 loaded (multi-game, all 11 games)\n");
     return 0;
 }
@@ -221,7 +219,6 @@ s32 attr_public plugin_unload(s32 argc, const char *argv[]) {
     UNHOOK(sceNpTrophyCreateHandle);
     UNHOOK(sceNpTrophyRegisterContext);
     UNHOOK(sceNpTrophyGetTrophyList);
-    UNHOOK(sceNpTrophyUnlockTrophy);
     return 0;
 }
 
