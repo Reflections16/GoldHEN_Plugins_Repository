@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <dlfcn.h>
 
 #include <Common.h>
 #include "plugin_common.h"
@@ -97,21 +98,21 @@ static void resolve_symbols(void) {
     void *kernel_mod = dlopen("libSceKernel.sprx", RTLD_NOW);
     
     if (np_mod) {
-        g_sceNpTrophyInit = dlsym(np_mod, "sceNpTrophyInit");
-        g_sceNpTrophyCreateContext = dlsym(np_mod, "sceNpTrophyCreateContext");
-        g_sceNpTrophyCreateHandle = dlsym(np_mod, "sceNpTrophyCreateHandle");
-        g_sceNpTrophyRegisterContext = dlsym(np_mod, "sceNpTrophyRegisterContext");
-        g_sceNpTrophyUnlockTrophy = dlsym(np_mod, "sceNpTrophyUnlockTrophy");
-        g_sceNpTrophyGetTrophyList = dlsym(np_mod, "sceNpTrophyGetTrophyList");
-        g_sceNpTrophyGetErrorString = dlsym(np_mod, "sceNpTrophyGetErrorString");
+        g_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit");
+        g_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext");
+        g_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle");
+        g_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext");
+        g_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy");
+        g_sceNpTrophyGetTrophyList = (void*)dlsym(np_mod, "sceNpTrophyGetTrophyList");
+        g_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString");
     }
     if (rtc_mod) {
-        g_sceRtcGetCurrentTick = dlsym(rtc_mod, "sceRtcGetCurrentTick");
-        g_sceRtcSetCurrentTick = dlsym(rtc_mod, "sceRtcSetCurrentTick");
+        g_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick");
+        g_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick");
     }
     if (kernel_mod) {
-        g_sceKernelGetProcessTitleId = dlsym(kernel_mod, "sceKernelGetProcessTitleId");
-        g_sceKernelGettimeofday = dlsym(kernel_mod, "sceKernelGettimeofday");
+        g_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId");
+        g_sceKernelGettimeofday = (void*)dlsym(kernel_mod, "sceKernelGettimeofday");
     }
     
     logf_("Symbols resolved: np_mod=%p rtc_mod=%p kernel_mod=%p\n", np_mod, rtc_mod, kernel_mod);
@@ -239,7 +240,8 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
         } else {
             logf_("WARNING: Unknown Title ID: %s\n", titleId);
         }
-        inited = 1    }
+        inited = 1;
+    }
     s32 r = 0;
     if (g_sceNpTrophyRegisterContext) {
         r = g_sceNpTrophyRegisterContext(ctx, h, opt);
