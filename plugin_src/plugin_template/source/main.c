@@ -33,7 +33,6 @@ s32 sceNpTrophyGetErrorString(s32 err, char *buf, size_t len);
 s32 sceRtcGetCurrentTick(RtcTick *t);
 s32 sceRtcSetCurrentTick(const RtcTick *t);
 s32 sceKernelGetProcessTitleId(char *titleId, size_t len);
-s32 sceKernelSendNotificationRequest(s32 unk, const char *msg, size_t len, s32 *result);
 
 static s32 (*real_sceNpTrophyInit)(const char *, const char *) = NULL;
 static s32 (*real_sceNpTrophyCreateContext)(SceNpTrophyContext *, s32, u32, u64) = NULL;
@@ -72,16 +71,8 @@ static const char *resolve_npwr(const char *cusa) {
     return NULL;
 }
 
-// ===== SAFE NOTIFICATION (on-screen) =====
-static void notify(const char *fmt, ...) {
-    char buf[512];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    s32 res = 0;
-    sceKernelSendNotificationRequest(0, buf, strlen(buf), &res);
-}
+// ===== NOTIFICATION через final_printf (в GoldHEN консоль) =====
+#define notify(fmt, ...) final_printf("[trophy_restore] " fmt "\n", ##__VA_ARGS__)
 
 // ===== SAFE LOG =====
 static void logf_(const char *fmt, ...) {
@@ -116,7 +107,7 @@ static void resolve_symbols_once(void) {
     if (g_symbols_resolved) return;
     g_symbols_resolved = 1;
 
-    notify("trophy_restore: resolving symbols...");
+    notify("resolving symbols...");
     
     void *np_mod = dlopen("libSceNpTrophy.sprx", RTLD_NOW);
     void *rtc_mod = dlopen("libSceRtc.sprx", RTLD_NOW);
@@ -139,7 +130,7 @@ static void resolve_symbols_once(void) {
     }
     
     LOG("resolve_symbols_once: np=%p rtc=%p kernel=%p", np_mod, rtc_mod, kernel_mod);
-    notify("trophy_restore: symbols resolved");
+    notify("symbols resolved");
 }
 
 // ===== LAZY HOOK INSTALLATION =====
@@ -147,22 +138,22 @@ static void install_hooks_once(void) {
     if (g_hooks_installed) return;
     g_hooks_installed = 1;
     
-    notify("trophy_restore: installing hooks...");
+    notify("installing hooks...");
     
     HOOK32(sceNpTrophyCreateContext);
     HOOK32(sceNpTrophyCreateHandle);
     HOOK32(sceNpTrophyRegisterContext);
     
     LOG("install_hooks_once: DONE");
-    notify("trophy_restore: hooks installed");
+    notify("hooks installed");
 }
 
 static void process_list(void) {
     LOG("process_list: START, npwr='%s'", g_current_npwr);
-    if (!g_current_npwr[0]) { LOG("ERROR: NPWR not resolved"); notify("trophy_restore: ERROR no NPWR"); return; }
+    if (!g_current_npwr[0]) { LOG("ERROR: NPWR not resolved"); notify("ERROR no NPWR"); return; }
 
     FILE *f = fopen(LIST_PATH, "r");
-    if (!f) { LOG("no list file"); notify("trophy_restore: no unlock file"); return; }
+    if (!f) { LOG("no list file"); notify("no unlock file"); return; }
     LOG("process_list: opened %s", LIST_PATH);
 
     char line[256];
@@ -204,7 +195,7 @@ static void process_list(void) {
     }
     fclose(f);
     rename(LIST_PATH, DONE_PATH);
-    notify("trophy_restore: processed %d trophies", processed);
+    notify("processed %d trophies", processed);
     LOG("process_list: DONE, processed=%d", processed);
 }
 
@@ -242,10 +233,10 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
             strncpy(g_current_npwr, npwr, sizeof(g_current_npwr)-1);
             if (real_sceNpTrophyInit) real_sceNpTrophyInit(npwr, npwr);
             LOG("Game: %s -> %s", titleId, npwr);
-            notify("trophy_restore: %s -> %s", titleId, npwr);
+            notify("%s -> %s", titleId, npwr);
         } else {
             LOG("WARNING: Unknown Title ID: %s", titleId);
-            notify("trophy_restore: unknown game %s", titleId);
+            notify("unknown game %s", titleId);
         }
     }
 
@@ -257,7 +248,7 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
 
 // ===== PLUGIN ENTRY POINTS =====
 s32 attr_public plugin_load(s32 argc, const char *argv[]) {
-    notify("trophy_restore v1.08 loaded (lazy mode)");
+    notify("v1.08 loaded (lazy mode)");
     
     final_printf("[GoldHEN] <%s\\Ver.0x%08x> %s\n", g_pluginName, g_pluginVersion, __func__);
     boot_ver();
