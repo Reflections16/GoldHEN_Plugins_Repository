@@ -7,6 +7,7 @@
 
 #include <Common.h>
 #include "plugin_common.h"
+#include <orbis/libkernel.h>
 
 attr_public const char *g_pluginName = "trophy_restore";
 attr_public const char *g_pluginDesc = "Unlock trophies from list with custom time (multi-game)";
@@ -20,7 +21,6 @@ attr_public u32 g_pluginVersion = 0x00000103;
 typedef s32 SceNpTrophyContext;
 typedef s32 SceNpTrophyHandle;
 typedef u64 SceNpTrophyId;
-typedef struct { s64 tv_sec; s64 tv_usec; } KTimeval;
 typedef struct { u64 tick; } RtcTick;
 
 // ===== Function PROTOTYPES (для HOOK32) =====
@@ -36,7 +36,7 @@ s32 sceNpTrophyGetErrorString(s32 err, char *buf, size_t len);
 s32 sceRtcGetCurrentTick(RtcTick *t);
 s32 sceRtcSetCurrentTick(const RtcTick *t);
 s32 sceKernelGetProcessTitleId(char *titleId, size_t len);
-s32 sceKernelGettimeofday(KTimeval *tp);
+// sceKernelGettimeofday вже в orbis/libkernel.h — НЕ ОГОЛОШУЄМО
 
 // ===== Function POINTERS (resolved via dlsym) =====
 static s32 (*real_sceNpTrophyInit)(const char *, const char *) = NULL;
@@ -49,7 +49,6 @@ static s32 (*real_sceNpTrophyGetErrorString)(s32, char *, size_t) = NULL;
 static s32 (*real_sceRtcGetCurrentTick)(RtcTick *) = NULL;
 static s32 (*real_sceRtcSetCurrentTick)(const RtcTick *) = NULL;
 static s32 (*real_sceKernelGetProcessTitleId)(char *, size_t) = NULL;
-static s32 (*real_sceKernelGettimeofday)(KTimeval *) = NULL;
 
 static SceNpTrophyContext g_ctx = -1;
 static SceNpTrophyHandle g_handle = -1;
@@ -127,7 +126,6 @@ static void resolve_symbols(void) {
     }
     if (kernel_mod) {
         real_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId");
-        real_sceKernelGettimeofday = (void*)dlsym(kernel_mod, "sceKernelGettimeofday");
     }
     
     logf_("Symbols resolved: np_mod=%p rtc_mod=%p kernel_mod=%p\n", np_mod, rtc_mod, kernel_mod);
