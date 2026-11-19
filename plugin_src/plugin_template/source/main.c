@@ -12,7 +12,7 @@
 attr_public const char *g_pluginName = "trophy_restore";
 attr_public const char *g_pluginDesc = "Unlock trophies from list with custom time (multi-game, verbose)";
 attr_public const char *g_pluginAuth = "you";
-attr_public u32 g_pluginVersion = 0x00000106;
+attr_public u32 g_pluginVersion = 0x00000107;
 
 #define LIST_PATH "/data/trophy_unlock.txt"
 #define DONE_PATH "/data/trophy_unlock.done"
@@ -23,7 +23,7 @@ typedef s32 SceNpTrophyHandle;
 typedef u64 SceNpTrophyId;
 typedef struct { u64 tick; } RtcTick;
 
-// ===== Function PROTOTYPES =====
+// ===== Function PROTOTYPES (для HOOK32) =====
 s32 sceNpTrophyInit(const char *commId, const char *svcLabel);
 s32 sceNpTrophyCreateContext(SceNpTrophyContext *ctx, s32 userId, u32 label, u64 opt);
 s32 sceNpTrophyCreateHandle(SceNpTrophyHandle *h);
@@ -35,7 +35,7 @@ s32 sceRtcGetCurrentTick(RtcTick *t);
 s32 sceRtcSetCurrentTick(const RtcTick *t);
 s32 sceKernelGetProcessTitleId(char *titleId, size_t len);
 
-// ===== Function POINTERS =====
+// ===== Function POINTERS (resolved via dlsym) =====
 static s32 (*real_sceNpTrophyInit)(const char *, const char *) = NULL;
 static s32 (*real_sceNpTrophyCreateContext)(SceNpTrophyContext *, s32, u32, u64) = NULL;
 static s32 (*real_sceNpTrophyCreateHandle)(SceNpTrophyHandle *) = NULL;
@@ -127,6 +127,11 @@ static void resolve_symbols_once(void) {
     }
     LOG("resolve_symbols_once: DONE");
 }
+
+// ===== FORWARD DECLARATIONS HOOK FUNCTIONS (обов'язково для HOOK32!) =====
+static s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u32 label, u64 opt);
+static s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h);
+static s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt);
 
 // ===== LAZY HOOK INSTALLATION =====
 static void install_hooks_once(void) {
@@ -265,7 +270,7 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
 // ===== PLUGIN ENTRY POINTS =====
 s32 attr_public plugin_load(s32 argc, const char *argv[]) {
     FILE *f = fopen(LOG_PATH, "a");
-    if (f) { fprintf(f, "\n=== [trophy_restore v1.06] plugin_load START ===\n"); fclose(f); }
+    if (f) { fprintf(f, "\n=== [trophy_restore v1.07] plugin_load START ===\n"); fclose(f); }
 
     final_printf("[GoldHEN] <%s\\Ver.0x%08x> %s\n", g_pluginName, g_pluginVersion, __func__);
     boot_ver();
