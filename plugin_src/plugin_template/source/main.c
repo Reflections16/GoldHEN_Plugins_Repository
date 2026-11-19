@@ -23,18 +23,33 @@ typedef u64 SceNpTrophyId;
 typedef struct { s64 tv_sec; s64 tv_usec; } KTimeval;
 typedef struct { u64 tick; } RtcTick;
 
-// ===== Function pointers (resolved via dlsym) =====
-static s32 (*g_sceNpTrophyInit)(const char *, const char *) = NULL;
-static s32 (*g_sceNpTrophyCreateContext)(SceNpTrophyContext *, s32, u32, u64) = NULL;
-static s32 (*g_sceNpTrophyCreateHandle)(SceNpTrophyHandle *) = NULL;
-static s32 (*g_sceNpTrophyRegisterContext)(SceNpTrophyContext, SceNpTrophyHandle, u64) = NULL;
-static s32 (*g_sceNpTrophyUnlockTrophy)(SceNpTrophyContext, SceNpTrophyHandle, SceNpTrophyId, SceNpTrophyId *) = NULL;
-static s32 (*g_sceNpTrophyGetTrophyList)(SceNpTrophyContext, SceNpTrophyHandle, SceNpTrophyId *, u32 *, u64) = NULL;
-static s32 (*g_sceNpTrophyGetErrorString)(s32, char *, size_t) = NULL;
-static s32 (*g_sceRtcGetCurrentTick)(RtcTick *) = NULL;
-static s32 (*g_sceRtcSetCurrentTick)(const RtcTick *) = NULL;
-static s32 (*g_sceKernelGetProcessTitleId)(char *, size_t) = NULL;
-static s32 (*g_sceKernelGettimeofday)(KTimeval *) = NULL;
+// ===== Function PROTOTYPES (для HOOK32) =====
+s32 sceNpTrophyInit(const char *commId, const char *svcLabel);
+s32 sceNpTrophyCreateContext(SceNpTrophyContext *ctx, s32 userId, u32 label, u64 opt);
+s32 sceNpTrophyCreateHandle(SceNpTrophyHandle *h);
+s32 sceNpTrophyRegisterContext(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt);
+s32 sceNpTrophyUnlockTrophy(SceNpTrophyContext ctx, SceNpTrophyHandle h,
+                            SceNpTrophyId id, SceNpTrophyId *platinumId);
+s32 sceNpTrophyGetTrophyList(SceNpTrophyContext ctx, SceNpTrophyHandle h,
+                             SceNpTrophyId *ids, u32 *count, u64 opt);
+s32 sceNpTrophyGetErrorString(s32 err, char *buf, size_t len);
+s32 sceRtcGetCurrentTick(RtcTick *t);
+s32 sceRtcSetCurrentTick(const RtcTick *t);
+s32 sceKernelGetProcessTitleId(char *titleId, size_t len);
+s32 sceKernelGettimeofday(KTimeval *tp);
+
+// ===== Function POINTERS (resolved via dlsym) =====
+static s32 (*real_sceNpTrophyInit)(const char *, const char *) = NULL;
+static s32 (*real_sceNpTrophyCreateContext)(SceNpTrophyContext *, s32, u32, u64) = NULL;
+static s32 (*real_sceNpTrophyCreateHandle)(SceNpTrophyHandle *) = NULL;
+static s32 (*real_sceNpTrophyRegisterContext)(SceNpTrophyContext, SceNpTrophyHandle, u64) = NULL;
+static s32 (*real_sceNpTrophyUnlockTrophy)(SceNpTrophyContext, SceNpTrophyHandle, SceNpTrophyId, SceNpTrophyId *) = NULL;
+static s32 (*real_sceNpTrophyGetTrophyList)(SceNpTrophyContext, SceNpTrophyHandle, SceNpTrophyId *, u32 *, u64) = NULL;
+static s32 (*real_sceNpTrophyGetErrorString)(s32, char *, size_t) = NULL;
+static s32 (*real_sceRtcGetCurrentTick)(RtcTick *) = NULL;
+static s32 (*real_sceRtcSetCurrentTick)(const RtcTick *) = NULL;
+static s32 (*real_sceKernelGetProcessTitleId)(char *, size_t) = NULL;
+static s32 (*real_sceKernelGettimeofday)(KTimeval *) = NULL;
 
 static SceNpTrophyContext g_ctx = -1;
 static SceNpTrophyHandle g_handle = -1;
@@ -98,21 +113,21 @@ static void resolve_symbols(void) {
     void *kernel_mod = dlopen("libSceKernel.sprx", RTLD_NOW);
     
     if (np_mod) {
-        g_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit");
-        g_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext");
-        g_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle");
-        g_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext");
-        g_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy");
-        g_sceNpTrophyGetTrophyList = (void*)dlsym(np_mod, "sceNpTrophyGetTrophyList");
-        g_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString");
+        real_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit");
+        real_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext");
+        real_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle");
+        real_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext");
+        real_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy");
+        real_sceNpTrophyGetTrophyList = (void*)dlsym(np_mod, "sceNpTrophyGetTrophyList");
+        real_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString");
     }
     if (rtc_mod) {
-        g_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick");
-        g_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick");
+        real_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick");
+        real_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick");
     }
     if (kernel_mod) {
-        g_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId");
-        g_sceKernelGettimeofday = (void*)dlsym(kernel_mod, "sceKernelGettimeofday");
+        real_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId");
+        real_sceKernelGettimeofday = (void*)dlsym(kernel_mod, "sceKernelGettimeofday");
     }
     
     logf_("Symbols resolved: np_mod=%p rtc_mod=%p kernel_mod=%p\n", np_mod, rtc_mod, kernel_mod);
@@ -147,23 +162,23 @@ static void process_list(void) {
         s64 unix_time = parse_time(time_str);
         if (!unix_time) { logf_("BAD time: %s\n", time_str); continue; }
 
-        if (g_sceRtcSetCurrentTick) {
+        if (real_sceRtcSetCurrentTick) {
             RtcTick tick = { .tick = ((u64)unix_time + 62135596800ULL) * 1000000ULL };
-            g_sceRtcSetCurrentTick(&tick);
+            real_sceRtcSetCurrentTick(&tick);
         }
 
         SceNpTrophyId plat = 0;
         s32 r = 0;
-        if (g_sceNpTrophyUnlockTrophy) {
-            r = g_sceNpTrophyUnlockTrophy(g_ctx, g_handle, id, &plat);
+        if (real_sceNpTrophyUnlockTrophy) {
+            r = real_sceNpTrophyUnlockTrophy(g_ctx, g_handle, id, &plat);
         } else {
             r = -1;
         }
 
         if (r < 0) {
             char err[256] = {0};
-            if (g_sceNpTrophyGetErrorString) {
-                g_sceNpTrophyGetErrorString(r, err, sizeof(err));
+            if (real_sceNpTrophyGetErrorString) {
+                real_sceNpTrophyGetErrorString(r, err, sizeof(err));
             }
             logf_("FAIL id=0x%llx ret=0x%x err=%s\n", (unsigned long long)id, r, err);
         } else {
@@ -176,8 +191,8 @@ static void process_list(void) {
 
 s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u32 label, u64 opt) {
     s32 r = 0;
-    if (g_sceNpTrophyCreateContext) {
-        r = g_sceNpTrophyCreateContext(ctx, userId, label, opt);
+    if (real_sceNpTrophyCreateContext) {
+        r = real_sceNpTrophyCreateContext(ctx, userId, label, opt);
     }
     if (r >= 0 && ctx) g_ctx = *ctx;
     
@@ -198,8 +213,8 @@ s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u32 label
 
 s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h) {
     s32 r = 0;
-    if (g_sceNpTrophyCreateHandle) {
-        r = g_sceNpTrophyCreateHandle(h);
+    if (real_sceNpTrophyCreateHandle) {
+        r = real_sceNpTrophyCreateHandle(h);
     }
     if (r >= 0 && h) g_handle = *h;
     return r;
@@ -208,8 +223,8 @@ s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h) {
 s32 sceNpTrophyGetTrophyList_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
                                   SceNpTrophyId *ids, u32 *count, u64 opt) {
     s32 r = 0;
-    if (g_sceNpTrophyGetTrophyList) {
-        r = g_sceNpTrophyGetTrophyList(ctx, h, ids, count, opt);
+    if (real_sceNpTrophyGetTrophyList) {
+        r = real_sceNpTrophyGetTrophyList(ctx, h, ids, count, opt);
     }
     if (r >= 0 && ids && *count > 0) {
         logf_("=== REAL TROPHY IDs for %s (count=%u) ===\n", g_current_npwr[0] ? g_current_npwr : "unknown", *count);
@@ -227,14 +242,14 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
         resolve_symbols();
         
         char titleId[16] = {0};
-        if (g_sceKernelGetProcessTitleId) {
-            g_sceKernelGetProcessTitleId(titleId, sizeof(titleId));
+        if (real_sceKernelGetProcessTitleId) {
+            real_sceKernelGetProcessTitleId(titleId, sizeof(titleId));
         }
         const char *npwr = resolve_npwr(titleId);
         if (npwr) {
             strncpy(g_current_npwr, npwr, sizeof(g_current_npwr)-1);
-            if (g_sceNpTrophyInit) {
-                g_sceNpTrophyInit(npwr, npwr);
+            if (real_sceNpTrophyInit) {
+                real_sceNpTrophyInit(npwr, npwr);
             }
             logf_("Game detected: %s -> %s\n", titleId, npwr);
         } else {
@@ -243,8 +258,8 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
         inited = 1;
     }
     s32 r = 0;
-    if (g_sceNpTrophyRegisterContext) {
-        r = g_sceNpTrophyRegisterContext(ctx, h, opt);
+    if (real_sceNpTrophyRegisterContext) {
+        r = real_sceNpTrophyRegisterContext(ctx, h, opt);
     }
     g_ctx = ctx;
     g_handle = h;
