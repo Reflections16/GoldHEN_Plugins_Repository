@@ -12,7 +12,7 @@
 attr_public const char *g_pluginName = "trophy_restore";
 attr_public const char *g_pluginDesc = "Unlock trophies from list with custom time (multi-game)";
 attr_public const char *g_pluginAuth = "you";
-attr_public u32 g_pluginVersion = 0x00000103;
+attr_public u32 g_pluginVersion = 0x00000104;
 
 #define LIST_PATH "/data/trophy_unlock.txt"
 #define DONE_PATH "/data/trophy_unlock.done"
@@ -30,13 +30,10 @@ s32 sceNpTrophyCreateHandle(SceNpTrophyHandle *h);
 s32 sceNpTrophyRegisterContext(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt);
 s32 sceNpTrophyUnlockTrophy(SceNpTrophyContext ctx, SceNpTrophyHandle h,
                             SceNpTrophyId id, SceNpTrophyId *platinumId);
-s32 sceNpTrophyGetTrophyList(SceNpTrophyContext ctx, SceNpTrophyHandle h,
-                             SceNpTrophyId *ids, u32 *count, u64 opt);
 s32 sceNpTrophyGetErrorString(s32 err, char *buf, size_t len);
 s32 sceRtcGetCurrentTick(RtcTick *t);
 s32 sceRtcSetCurrentTick(const RtcTick *t);
 s32 sceKernelGetProcessTitleId(char *titleId, size_t len);
-// sceKernelGettimeofday вже в orbis/libkernel.h — НЕ ОГОЛОШУЄМО
 
 // ===== Function POINTERS (resolved via dlsym) =====
 static s32 (*real_sceNpTrophyInit)(const char *, const char *) = NULL;
@@ -58,7 +55,7 @@ static char g_current_npwr[32] = {0};
 HOOK_INIT(sceNpTrophyCreateContext);
 HOOK_INIT(sceNpTrophyCreateHandle);
 HOOK_INIT(sceNpTrophyRegisterContext);
-HOOK_INIT(sceNpTrophyGetTrophyList);
+// HOOK_INIT(sceNpTrophyGetTrophyList);  // <-- ПРИБРАНО
 
 // ===== МАПІНГ CUSA → NPWR (всі 11 ігор) =====
 typedef struct { const char *cusa; const char *npwr; } GameMap;
@@ -137,6 +134,20 @@ static void process_list(void) {
         return;
     }
     logf_("Processing list for %s\n", g_current_npwr);
+
+    // Дамп реальних Trophy ID через dlsym (без хука)
+    if (real_sceNpTrophyGetTrophyList && g_ctx >= 0 && g_handle >= 0) {
+        SceNpTrophyId ids[256];
+        u32 count = 256;
+        s32 r = real_sceNpTrophyGetTrophyList(g_ctx, g_handle, ids, &count, 0);
+        if (r >= 0 && count > 0) {
+            logf_("=== REAL TROPHY IDs for %s (count=%u) ===\n", g_current_npwr, count);
+            for (u32 i = 0; i < count; i++) {
+                logf_("  [%u] 0x%llx\n", i, (unsigned long long)ids[i]);
+            }
+            logf_("=== END LIST ===\n");
+        }
+    }
 
     FILE *f = fopen(LIST_PATH, "r");
     if (!f) { logf_("no list file\n"); return; }
@@ -218,21 +229,7 @@ s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h) {
     return r;
 }
 
-s32 sceNpTrophyGetTrophyList_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
-                                  SceNpTrophyId *ids, u32 *count, u64 opt) {
-    s32 r = 0;
-    if (real_sceNpTrophyGetTrophyList) {
-        r = real_sceNpTrophyGetTrophyList(ctx, h, ids, count, opt);
-    }
-    if (r >= 0 && ids && *count > 0) {
-        logf_("=== REAL TROPHY IDs for %s (count=%u) ===\n", g_current_npwr[0] ? g_current_npwr : "unknown", *count);
-        for (u32 i = 0; i < *count; i++) {
-            logf_("  [%u] 0x%llx\n", i, (unsigned long long)ids[i]);
-        }
-        logf_("=== END LIST ===\n");
-    }
-    return r;
-}
+// sceNpTrophyGetTrophyList_hook -- ПРИБРАНО (викликаємо прямо в process_list)
 
 s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt) {
     static int inited = 0;
@@ -271,8 +268,8 @@ s32 attr_public plugin_load(s32 argc, const char *argv[]) {
     HOOK32(sceNpTrophyCreateContext);
     HOOK32(sceNpTrophyCreateHandle);
     HOOK32(sceNpTrophyRegisterContext);
-    HOOK32(sceNpTrophyGetTrophyList);
-    logf_("trophy_restore v1.03 loaded (multi-game, all 11 games, dlsym)\n");
+    // HOOK32(sceNpTrophyGetTrophyList);  // <-- ПРИБРАНО
+    logf_("trophy_restore v1.04 loaded (multi-game, all 11 games, dlsym)\n");
     return 0;
 }
 
@@ -281,7 +278,7 @@ s32 attr_public plugin_unload(s32 argc, const char *argv[]) {
     UNHOOK(sceNpTrophyCreateContext);
     UNHOOK(sceNpTrophyCreateHandle);
     UNHOOK(sceNpTrophyRegisterContext);
-    UNHOOK(sceNpTrophyGetTrophyList);
+    // UNHOOK(sceNpTrophyGetTrophyList);  // <-- ПРИБРАНО
     return 0;
 }
 
