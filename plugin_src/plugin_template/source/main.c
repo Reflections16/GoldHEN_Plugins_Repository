@@ -10,9 +10,9 @@
 #include <orbis/libkernel.h>
 
 attr_public const char *g_pluginName = "trophy_restore";
-attr_public const char *g_pluginDesc = "Unlock trophies from list with custom time (multi-game, safe)";
+attr_public const char *g_pluginDesc = "Unlock trophies from list with custom time (multi-game, forced init)";
 attr_public const char *g_pluginAuth = "you";
-attr_public u32 g_pluginVersion = 0x00000108;
+attr_public u32 g_pluginVersion = 0x00000109;
 
 #define LIST_PATH "/data/trophy_unlock.txt"
 #define DONE_PATH "/data/trophy_unlock.done"
@@ -49,11 +49,13 @@ static SceNpTrophyHandle g_handle = -1;
 static volatile int g_done = 0;
 static volatile int g_hooks_installed = 0;
 static volatile int g_symbols_resolved = 0;
+static volatile int g_init_done = 0;
 static char g_current_npwr[32] = {0};
 
 HOOK_INIT(sceNpTrophyCreateContext);
 HOOK_INIT(sceNpTrophyCreateHandle);
 HOOK_INIT(sceNpTrophyRegisterContext);
+HOOK_INIT(sceNpTrophyInit);
 
 typedef struct { const char *cusa; const char *npwr; } GameMap;
 static const GameMap GAME_MAP[] = {
@@ -71,10 +73,8 @@ static const char *resolve_npwr(const char *cusa) {
     return NULL;
 }
 
-// ===== NOTIFICATION через final_printf (в GoldHEN консоль) =====
 #define notify(fmt, ...) final_printf("[trophy_restore] " fmt "\n", ##__VA_ARGS__)
 
-// ===== SAFE LOG =====
 static void logf_(const char *fmt, ...) {
     FILE *f = fopen(LOG_PATH, "a");
     if (!f) return;
@@ -101,51 +101,57 @@ static s64 parse_time(const char *s) {
 static s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u32 label, u64 opt);
 static s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h);
 static s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt);
+static s32 sceNpTrophyInit_hook(const char *commId, const char *svcLabel);
 
-// ===== LAZY SYMBOL RESOLUTION =====
-static void resolve_symbols_once(void) {
+// ===== RESOLVE SYMBOLS =====
+static void resolve_symbols(void) {
     if (g_symbols_resolved) return;
     g_symbols_resolved = 1;
+    LOG("resolve_symbols: START");
 
-    notify("resolving symbols...");
-    
     void *np_mod = dlopen("libSceNpTrophy.sprx", RTLD_NOW);
     void *rtc_mod = dlopen("libSceRtc.sprx", RTLD_NOW);
     void *kernel_mod = dlopen("libSceKernel.sprx", RTLD_NOW);
 
     if (np_mod) {
-        real_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit");
-        real_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext");
-        real_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle");
-        real_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext");
-        real_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy");
-        real_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString");
+        real_sceNpTrophyInit = (void*)dlsym(np_mod, "sceNpTrophyInit"); LOG("sceNpTrophyInit=%p", real_sceNpTrophyInit);
+        real_sceNpTrophyCreateContext = (void*)dlsym(np_mod, "sceNpTrophyCreateContext"); LOG("CreateContext=%p", real_sceNpTrophyCreateContext);
+        real_sceNpTrophyCreateHandle = (void*)dlsym(np_mod, "sceNpTrophyCreateHandle"); LOG("CreateHandle=%p", real_sceNpTrophyCreateHandle);
+        real_sceNpTrophyRegisterContext = (void*)dlsym(np_mod, "sceNpTrophyRegisterContext"); LOG("RegisterContext=%p", real_sceNpTrophyRegisterContext);
+        real_sceNpTrophyUnlockTrophy = (void*)dlsym(np_mod, "sceNpTrophyUnlockTrophy"); LOG("UnlockTrophy=%p", real_sceNpTrophyUnlockTrophy);
+        real_sceNpTrophyGetErrorString = (void*)dlsym(np_mod, "sceNpTrophyGetErrorString"); LOG("GetErrorString=%p", real_sceNpTrophyGetErrorString);
     }
     if (rtc_mod) {
-        real_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick");
-        real_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick");
+        real_sceRtcGetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcGetCurrentTick"); LOG("RtcGetCurrentTick=%p", real_sceRtcGetCurrentTick);
+        real_sceRtcSetCurrentTick = (void*)dlsym(rtc_mod, "sceRtcSetCurrentTick"); LOG("RtcSetCurrentTick=%p", real_sceRtcSetCurrentTick);
     }
     if (kernel_mod) {
-        real_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId");
+        real_sceKernelGetProcessTitleId = (void*)dlsym(kernel_mod, "sceKernelGetProcessTitleId"); LOG("GetProcessTitleId=%p", real_sceKernelGetProcessTitleId);
     }
-    
-    LOG("resolve_symbols_once: np=%p rtc=%p kernel=%p", np_mod, rtc_mod, kernel_mod);
+    LOG("resolve_symbols: DONE");
     notify("symbols resolved");
 }
 
-// ===== LAZY HOOK INSTALLATION =====
-static void install_hooks_once(void) {
+// ===== INSTALL HOOKS =====
+static void install_hooks(void) {
     if (g_hooks_installed) return;
     g_hooks_installed = 1;
-    
     notify("installing hooks...");
-    
-    HOOK32(sceNpTrophyCreateContext);
-    HOOK32(sceNpTrophyCreateHandle);
-    HOOK32(sceNpTrophyRegisterContext);
-    
-    LOG("install_hooks_once: DONE");
+    HOOK32(sceNpTrophyCreateContext); LOG("HOOK CreateContext");
+    HOOK32(sceNpTrophyCreateHandle); LOG("HOOK CreateHandle");
+    HOOK32(sceNpTrophyRegisterContext); LOG("HOOK RegisterContext");
+    HOOK32(sceNpTrophyInit); LOG("HOOK Init");
     notify("hooks installed");
+}
+
+// ===== FORCE PROCESS LIST =====
+static void try_process_list(void) {
+    if (g_done || !g_current_npwr[0]) return;
+    if (g_ctx < 0 || g_handle < 0) { LOG("try_process_list: ctx/handle not ready"); return; }
+    
+    g_done = 1;
+    LOG("try_process_list: FORCING process_list");
+    process_list();
 }
 
 static void process_list(void) {
@@ -200,10 +206,21 @@ static void process_list(void) {
 }
 
 // ===== HOOKS =====
+s32 sceNpTrophyInit_hook(const char *commId, const char *svcLabel) {
+    LOG("sceNpTrophyInit_hook: commId=%s svcLabel=%s", commId ? commId : "NULL", svcLabel ? svcLabel : "NULL");
+    s32 r = real_sceNpTrophyInit ? real_sceNpTrophyInit(commId, svcLabel) : -1;
+    LOG("  -> ret=%d", r);
+    if (r >= 0 && !g_init_done) {
+        g_init_done = 1;
+        // Force process_list if we have context
+        try_process_list();
+    }
+    return r;
+}
+
 s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u32 label, u64 opt) {
     s32 r = real_sceNpTrophyCreateContext ? real_sceNpTrophyCreateContext(ctx, userId, label, opt) : -1;
-    if (r >= 0 && ctx) g_ctx = *ctx;
-
+    if (r >= 0 && ctx) { g_ctx = *ctx; LOG("CreateContext: ctx=%d", g_ctx); }
     if (label != 0) {
         char npwr[32];
         snprintf(npwr, sizeof(npwr), "NPWR%05x_00", label & 0xFFFFF);
@@ -212,20 +229,24 @@ s32 sceNpTrophyCreateContext_hook(SceNpTrophyContext *ctx, s32 userId, u32 label
             LOG("Uncharted sub-game: %s", npwr);
         }
     }
+    try_process_list();
     return r;
 }
 
 s32 sceNpTrophyCreateHandle_hook(SceNpTrophyHandle *h) {
     s32 r = real_sceNpTrophyCreateHandle ? real_sceNpTrophyCreateHandle(h) : -1;
-    if (r >= 0 && h) g_handle = *h;
+    if (r >= 0 && h) { g_handle = *h; LOG("CreateHandle: handle=%d", g_handle); }
+    try_process_list();
     return r;
 }
 
 s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h, u64 opt) {
+    LOG("RegisterContext_hook: ctx=%d handle=%d", ctx, h);
     if (!g_hooks_installed) {
-        resolve_symbols_once();
-        install_hooks_once();
-
+        resolve_symbols();
+        install_hooks();
+    }
+    if (!g_init_done) {
         char titleId[16] = {0};
         if (real_sceKernelGetProcessTitleId) real_sceKernelGetProcessTitleId(titleId, sizeof(titleId));
         const char *npwr = resolve_npwr(titleId);
@@ -234,24 +255,40 @@ s32 sceNpTrophyRegisterContext_hook(SceNpTrophyContext ctx, SceNpTrophyHandle h,
             if (real_sceNpTrophyInit) real_sceNpTrophyInit(npwr, npwr);
             LOG("Game: %s -> %s", titleId, npwr);
             notify("%s -> %s", titleId, npwr);
-        } else {
-            LOG("WARNING: Unknown Title ID: %s", titleId);
-            notify("unknown game %s", titleId);
         }
+        g_init_done = 1;
     }
-
-    s32 r = real_sceNpTrophyRegisterContext ? real_sceNpTrophyRegisterContext(ctx, h, opt) : -1;
     g_ctx = ctx; g_handle = h;
-    if (r >= 0 && !g_done) { g_done = 1; process_list(); }
-    return r;
+    try_process_list();
+    return real_sceNpTrophyRegisterContext ? real_sceNpTrophyRegisterContext(ctx, h, opt) : -1;
 }
 
 // ===== PLUGIN ENTRY POINTS =====
 s32 attr_public plugin_load(s32 argc, const char *argv[]) {
-    notify("v1.08 loaded (lazy mode)");
+    // IMMEDIATE LOG
+    FILE *f = fopen(LOG_PATH, "a");
+    if (f) { fprintf(f, "\n=== [trophy_restore v1.09] plugin_load ===\n"); fclose(f); }
     
+    notify("v1.09 loaded - FORCING INIT");
     final_printf("[GoldHEN] <%s\\Ver.0x%08x> %s\n", g_pluginName, g_pluginVersion, __func__);
     boot_ver();
+
+    // FORCE RESOLVE + HOOKS IMMEDIATELY
+    resolve_symbols();
+    install_hooks();
+    
+    // Try to get title ID now
+    char titleId[16] = {0};
+    if (real_sceKernelGetProcessTitleId) {
+        real_sceKernelGetProcessTitleId(titleId, sizeof(titleId));
+        LOG("plugin_load: titleId=%s", titleId);
+        const char *npwr = resolve_npwr(titleId);
+        if (npwr) {
+            strncpy(g_current_npwr, npwr, sizeof(g_current_npwr)-1);
+            if (real_sceNpTrophyInit) real_sceNpTrophyInit(npwr, npwr);
+            LOG("Pre-detected: %s -> %s", titleId, npwr);
+        }
+    }
     
     return 0;
 }
@@ -262,6 +299,7 @@ s32 attr_public plugin_unload(s32 argc, const char *argv[]) {
         UNHOOK(sceNpTrophyCreateContext);
         UNHOOK(sceNpTrophyCreateHandle);
         UNHOOK(sceNpTrophyRegisterContext);
+        UNHOOK(sceNpTrophyInit);
     }
     return 0;
 }
